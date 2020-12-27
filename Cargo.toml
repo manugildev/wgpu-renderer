@@ -1,0 +1,21 @@
+[package]
+name = "wgpu-renderer"
+version = "0.1.0"
+authors = ["Manuel Gil <manugildev@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+image = "0.23"
+winit = "0.22"
+shaderc = "0.6"
+cgmath = "0.17"
+env_logger = "0.7" # Only use on binaries, libraries should use 'log' instead
+log = "0.4"
+futures = "0.3" # IDEA: Substitute this by std::futures? 
+
+# Adds dependency but allows to change some of the included features
+[dependencies.wgpu]
+version = "0.6"
+features = ["vulkan-portability"]
