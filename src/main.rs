@@ -5,6 +5,54 @@ use winit::{
 };
 
 use futures::executor::block_on;
+use wgpu::util::DeviceExt;
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+impl Vertex {
+    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        let attrib_descs = &[
+            // Position
+            wgpu::VertexAttributeDescriptor {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float3,
+            },
+            // Color
+            wgpu::VertexAttributeDescriptor {
+                offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float3,
+            }
+        ];
+
+        return wgpu::VertexBufferDescriptor {
+            stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Vertex,
+            attributes: attrib_descs
+            //attributes: &wgpu::vertex_attr_array![0 => Float3, 1 => Float3],
+        };
+    }
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [-0.08,  0.49, 0.0], color: [1.0, 0.0, 0.0] }, // A
+    Vertex { position: [-0.49,  0.06, 0.0], color: [0.0, 1.0, 1.0] }, // B
+    Vertex { position: [-0.21, -0.44, 0.0], color: [0.0, 1.0, 0.0] }, // C
+    Vertex { position: [ 0.35, -0.34, 0.0], color: [1.0, 0.0, 1.0] }, // D
+    Vertex { position: [ 0.44,  0.23, 0.0], color: [0.0, 0.0, 1.0] }, // E
+];
+
+const INDICES: &[u16] = &[
+    0, 1, 4,
+    1, 2, 4,
+    2, 3, 4,
+];
 
 struct State {
     surface: wgpu::Surface,
@@ -14,6 +62,11 @@ struct State {
     swap_chain_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>, // INFO: PhysicalSize takes into account device's scale factor
+    render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
 }
 
 impl State {
@@ -52,6 +105,76 @@ impl State {
         };
         let swap_chain = device.create_swap_chain(&surface, &swap_chain_desc);
 
+        // Create ShaderModules
+        let vs_module = device.create_shader_module(wgpu::include_spirv!("shader.vert.spv"));
+        let fs_module = device.create_shader_module(wgpu::include_spirv!("shader.frag.spv"));
+
+        // Create Vertex Buffer
+        let buffer_init_desc = wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES), // INFO: cast to &[u8]
+            usage: wgpu::BufferUsage::VERTEX,
+        };
+
+        let vertex_buffer = device.create_buffer_init(&buffer_init_desc);
+        let num_vertices = VERTICES.len() as u32;
+
+        // Create Vertex Buffer
+        let buffer_init_desc = wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES), // INFO: cast to &[u8]
+            usage: wgpu::BufferUsage::INDEX,
+        };
+
+        let index_buffer = device.create_buffer_init(&buffer_init_desc);
+        let num_indices = INDICES.len() as u32;
+
+        // Create Pipeline Layout
+        let pipeline_layout_desc = wgpu::PipelineLayoutDescriptor {
+            label: Some("Render Pipeline Layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        };
+        let render_pipeline_layout = device.create_pipeline_layout(&pipeline_layout_desc);
+
+        // Create Render Pipeline
+        let render_pipeline_desc = wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex_stage: wgpu::ProgrammableStageDescriptor {
+                module: &vs_module,
+                entry_point: "main",
+            },
+            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                module: &fs_module,
+                entry_point: "main",
+            }),
+            rasterization_state: Some(wgpu::RasterizationStateDescriptor{
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: wgpu::CullMode::Back,
+                depth_bias: 0,
+                depth_bias_slope_scale: 0.0,
+                depth_bias_clamp: 0.0,
+                clamp_depth: false,
+            }),
+            color_states: &[wgpu::ColorStateDescriptor{ // Define how colors are stored and processed
+                format: swap_chain_desc.format,
+                color_blend: wgpu::BlendDescriptor::REPLACE,
+                alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                write_mask: wgpu::ColorWrite::ALL,
+            }],
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            depth_stencil_state: None,
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[Vertex::desc()],
+            },
+            sample_count: 1,
+            sample_mask: !0, // Use all samples
+            alpha_to_coverage_enabled: false,
+        };
+        let render_pipeline = device.create_render_pipeline(&render_pipeline_desc);
+
         return State {
             surface,
             device,
@@ -59,6 +182,11 @@ impl State {
             swap_chain_desc,
             swap_chain,
             size,
+            render_pipeline,
+            vertex_buffer,
+            num_vertices,
+            index_buffer,
+            num_indices,
         };
     }
 
@@ -89,7 +217,7 @@ impl State {
 
         {
             // Create Render Pass
-            let clear_color = wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0, };
+            let clear_color = wgpu::Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0, };
             let render_pass_desc = wgpu::RenderPassDescriptor {
                 // Color Attachments
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
@@ -103,7 +231,11 @@ impl State {
                 // Depth Stencil Attachments
                 depth_stencil_attachment: None,
             };
-            /*let _render_pass =*/ encoder.begin_render_pass(&render_pass_desc);
+            let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..));
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -152,7 +284,9 @@ fn handle_redraw_requested(state: &mut State, control_flow: &mut ControlFlow) {
 fn main() {
     env_logger::init(); // INFO: error!, warn!, info!, debug! and trace!
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+
+    let window = WindowBuilder::new().with_title("WGPU Renderer").build(&event_loop).unwrap();
+
     let mut state = block_on(State::new(&window));
 
     // INFO: move -> moves any variables you reference which are outside the scope of the closure into the closure's object.
