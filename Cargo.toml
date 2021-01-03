@@ -14,6 +14,7 @@ env_logger = "0.7" # Only use on binaries, libraries should use 'log' instead
 log = "0.4"
 futures = "0.3" # IDEA: Substitute this by std::futures? 
 bytemuck = { version = "1.4", features = ["derive" ]}
+anyhow = "1.0"
 
 # Adds dependency but allows to change some of the included features
 [dependencies.wgpu]
