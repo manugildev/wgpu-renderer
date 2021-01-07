@@ -10,7 +10,7 @@ use futures::executor::block_on;
 use wgpu::util::DeviceExt;
 use texture::Texture;
 
-
+//=============================================================================
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -62,6 +62,37 @@ const INDICES: &[u16] = &[
     3, 1, 2,
 ];
 
+//=============================================================================
+
+struct Camera {
+    eye: cgmath::Point3<f32>,
+    target: cgmath::Point3<f32>,
+    up: cgmath::Vector3<f32>,
+    aspect: f32,
+    fovy: f32,
+    znear: f32,
+    zfar: f32,
+}
+
+impl Camera {
+    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
+        let view = cgmath::Matrix4::look_at(self.eye, self.target, self.up);
+        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+
+        return OPENGL_TO_WGPU_MATRIX * proj * view;
+    }
+}
+
+#[rustfmt::skip]
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,
+);
+
+//=============================================================================
+
 struct State {
     surface: wgpu::Surface,
     // Logical Device
@@ -77,6 +108,7 @@ struct State {
     num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
     diffuse_texture: Texture,
+    camera: Camera,
 }
 
 impl State {
@@ -158,6 +190,16 @@ impl State {
             ],
         };
         let diffuse_bind_group = device.create_bind_group(&bind_group_desc);
+
+        let camera = Camera {
+            eye: (0.0, 1.0, 2.0).into(),
+            target: (0.0, 0.0, 0.0).into(),
+            up: cgmath::Vector3::unit_y(),
+            aspect: swap_chain_desc.width as f32 / swap_chain_desc.height as f32,
+            fovy: 45.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
 
         // Create ShaderModules
         let vs_module = device.create_shader_module(wgpu::include_spirv!("../shaders/shader.vert.spv"));
@@ -243,6 +285,7 @@ impl State {
             num_indices,
             diffuse_bind_group,
             diffuse_texture,
+            camera,
         };
     }
 
