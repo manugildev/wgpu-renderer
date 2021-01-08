@@ -3,3 +3,6 @@
 
 # Compiled Shaders
 *.spv
+
+# IDE
+.nvimlog

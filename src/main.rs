@@ -64,6 +64,30 @@ const INDICES: &[u16] = &[
 
 //=============================================================================
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Uniforms {
+    // We can't use cgmath with bytemuck directly so we'll have
+    // to convert the Matrix4 into a 4x4 f32 array
+    // TODO: Build converter form cgmath to bytemuck
+    view_proj: [[f32; 4]; 4],
+}
+
+impl Uniforms {
+    fn new() -> Self {
+        use cgmath::SquareMatrix;
+        return Self {
+            view_proj: cgmath::Matrix4::identity().into()
+        };
+    }
+
+    fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_proj = camera.build_view_projection_matrix().into();
+    }
+}
+
+//=============================================================================
+
 struct Camera {
     eye: cgmath::Point3<f32>,
     target: cgmath::Point3<f32>,
@@ -109,6 +133,9 @@ struct State {
     diffuse_bind_group: wgpu::BindGroup,
     diffuse_texture: Texture,
     camera: Camera,
+    uniforms: Uniforms,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -201,6 +228,41 @@ impl State {
             zfar: 100.0,
         };
 
+        // Create Uniform Buffers
+        let mut uniforms = Uniforms::new();
+        uniforms.update_view_proj(&camera);
+
+        let uniforms_array = &[uniforms];
+        let uniform_buffer_desc = wgpu::util::BufferInitDescriptor {
+            label: Some("Uniform Buffer"),
+            contents: bytemuck::cast_slice(uniforms_array),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        };
+
+        let uniform_buffer = device.create_buffer_init(&uniform_buffer_desc);
+
+        // Create Uniform Bind Group
+        let uniform_bind_group_layout_entry = wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStage::VERTEX,
+            ty: wgpu::BindingType::UniformBuffer { dynamic: false, min_binding_size: None, },
+            count: None,
+        };
+        let uniform_bind_group_layout_desc = wgpu::BindGroupLayoutDescriptor{
+            label: Some("Uniform Bind Group Layout"),
+            entries: &[uniform_bind_group_layout_entry]
+        }; 
+        let uniform_bind_group_layout = device.create_bind_group_layout(&uniform_bind_group_layout_desc);
+        let uniform_bind_group_desc = wgpu::BindGroupDescriptor {
+            label: Some("Uniform Bind Group"),
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+            }],
+        };
+        let uniform_bind_group = device.create_bind_group(&uniform_bind_group_desc);
+
         // Create ShaderModules
         let vs_module = device.create_shader_module(wgpu::include_spirv!("../shaders/shader.vert.spv"));
         let fs_module = device.create_shader_module(wgpu::include_spirv!("../shaders/shader.frag.spv"));
@@ -228,7 +290,10 @@ impl State {
         // Create Pipeline Layout
         let pipeline_layout_desc = wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&texture_bind_group_layout],
+            bind_group_layouts: &[
+                &texture_bind_group_layout,
+                &uniform_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         };
         let render_pipeline_layout = device.create_pipeline_layout(&pipeline_layout_desc);
@@ -286,6 +351,9 @@ impl State {
             diffuse_bind_group,
             diffuse_texture,
             camera,
+            uniforms,
+            uniform_buffer,
+            uniform_bind_group,
         };
     }
 
@@ -333,6 +401,7 @@ impl State {
             let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..));
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
