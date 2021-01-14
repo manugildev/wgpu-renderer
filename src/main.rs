@@ -4,6 +4,7 @@ use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
+    dpi::PhysicalSize,
 };
 
 use futures::executor::block_on;
@@ -19,6 +20,7 @@ struct Vertex {
     color: [f32; 3],
     tex_coords: [f32; 2],
 }
+
 impl Vertex {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
         let attrib_descs = &[
@@ -69,7 +71,7 @@ const INDICES: &[u16] = &[
 struct Uniforms {
     // We can't use cgmath with bytemuck directly so we'll have
     // to convert the Matrix4 into a 4x4 f32 array
-    // TODO: Build converter form cgmath to bytemuck
+    // TODO: Build converter (from/into) form cgmath to bytemuck
     view_proj: [[f32; 4]; 4],
 }
 
@@ -117,6 +119,99 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 
 //=============================================================================
 
+struct CameraController {
+    speed: f32,
+    is_up_pressed: bool,
+    is_down_pressed: bool,
+    is_forward_pressed: bool,
+    is_backward_pressed: bool,
+    is_left_pressed: bool,
+    is_right_pressed: bool,
+}
+
+impl CameraController {
+    fn new(speed: f32) -> Self {
+        return CameraController {
+            speed: speed,
+            is_up_pressed: false,
+            is_down_pressed: false,
+            is_forward_pressed: false,
+            is_backward_pressed: false,
+            is_left_pressed: false,
+            is_right_pressed: false,
+        } 
+    }
+
+    fn process_events(&mut self, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput { state, virtual_keycode: Some(keycode), .. },
+                ..
+            } => {
+                let is_pressed = *state == ElementState::Pressed;
+                match keycode {
+                    VirtualKeyCode::Space => {
+                        self.is_up_pressed = is_pressed;
+                        return true;
+                    },
+                    VirtualKeyCode::LShift=> {
+                        self.is_down_pressed = is_pressed;
+                        return true;
+                    },
+                    VirtualKeyCode::W | VirtualKeyCode::Up => {
+                        self.is_forward_pressed = is_pressed;
+                        return true;
+                    },
+                    VirtualKeyCode::A | VirtualKeyCode::Left => {
+                        self.is_left_pressed = is_pressed;
+                        return true;
+                    },
+                    VirtualKeyCode::S | VirtualKeyCode::Down => {
+                        self.is_backward_pressed = is_pressed;
+                        return true;
+                    },
+                    VirtualKeyCode::D | VirtualKeyCode::Right => {
+                        self.is_right_pressed = is_pressed;
+                        return true;
+                    },
+                 _ => return false,
+                }
+            },
+            _ => return false,
+        }
+    }
+
+    fn update_camera(&self, camera: &mut Camera) {
+        use cgmath::InnerSpace;
+        let forward = camera.target - camera.eye;
+        let forward_norm = forward.normalize();
+        let forward_mag = forward.magnitude();
+
+        // Prevents glitching when camera gets to close to the center of the screen
+        if self.is_forward_pressed && forward_mag > self.speed {
+            camera.eye += forward_norm * self.speed;
+        }
+        if self.is_backward_pressed {
+            camera.eye -= forward_norm * self.speed;
+        }
+
+        let right = forward_norm.cross(camera.up);
+
+        let forward = camera.target - camera.eye;
+        let forward_mag = forward.magnitude();
+
+        if self.is_right_pressed {
+            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
+        }
+        if self.is_left_pressed {
+            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
+        }
+
+   }
+}
+
+//=============================================================================
+
 struct State {
     surface: wgpu::Surface,
     // Logical Device
@@ -124,15 +219,16 @@ struct State {
     queue: wgpu::Queue,
     swap_chain_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
-    size: winit::dpi::PhysicalSize<u32>, // INFO: PhysicalSize takes into account device's scale factor
+    size: PhysicalSize<u32>, // INFO: PhysicalSize takes into account device's scale factor
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    _num_vertices: u32,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: Texture,
+    _diffuse_texture: Texture,
     camera: Camera,
+    camera_controller: CameraController,
     uniforms: Uniforms,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
@@ -148,7 +244,7 @@ impl State {
         // Create Adapter
         let adapter_options = &wgpu::RequestAdapterOptions {
             // Default gets LowP on battery and HighP when on mains
-            power_preference: wgpu::PowerPreference::default(),
+            power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
         };
         // The adapter identifies both an instance of a physical hardware accelerator (CPU, GPU),
@@ -178,7 +274,7 @@ impl State {
         let diffuse_texture = Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree-texture").unwrap();
 
         // Describe a set of resources and how are they accessed by a Shader
-        let bind_group_layout_desc = wgpu::BindGroupLayoutDescriptor {
+        let texture_bind_group_layout_desc = wgpu::BindGroupLayoutDescriptor {
             label: Some("texture_bind_group_layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -201,7 +297,7 @@ impl State {
                 },
             ],
         };
-        let texture_bind_group_layout = device.create_bind_group_layout(&bind_group_layout_desc);
+        let texture_bind_group_layout = device.create_bind_group_layout(&texture_bind_group_layout_desc);
         let bind_group_desc = wgpu::BindGroupDescriptor {
             label: Some("difuse_bind_group"),
             layout: &texture_bind_group_layout,
@@ -227,6 +323,8 @@ impl State {
             znear: 0.1,
             zfar: 100.0,
         };
+
+        let camera_controller = CameraController::new(0.2);
 
         // Create Uniform Buffers
         let mut uniforms = Uniforms::new();
@@ -345,19 +443,20 @@ impl State {
             size,
             render_pipeline,
             vertex_buffer,
-            num_vertices,
+            _num_vertices: num_vertices,
             index_buffer,
             num_indices,
             diffuse_bind_group,
-            diffuse_texture,
+            _diffuse_texture: diffuse_texture,
             camera,
+            camera_controller,
             uniforms,
             uniform_buffer,
             uniform_bind_group,
         };
     }
 
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.size = new_size;
         self.swap_chain_desc.width = new_size.width;
         self.swap_chain_desc.height = new_size.height;
@@ -367,10 +466,14 @@ impl State {
     // Returns a bool to indicate whether an event has been fully processed. If `true` the main
     // loop won't process the event any further
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+        return self.camera_controller.process_events(event);
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        self.camera_controller.update_camera(&mut self.camera);
+        self.uniforms.update_view_proj(&self.camera);
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+    }
 
     fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
         // Get next frame
@@ -413,7 +516,7 @@ impl State {
     }
 }
 
-fn handle_keyboard_input(state: &mut State, input: KeyboardInput, control_flow: &mut ControlFlow) {
+fn handle_keyboard_input(_state: &mut State, input: KeyboardInput, control_flow: &mut ControlFlow) {
     if input.state == ElementState::Pressed {
         match input.virtual_keycode {
             Some(VirtualKeyCode::Escape) => {
@@ -454,7 +557,14 @@ fn main() {
     env_logger::init(); // INFO: error!, warn!, info!, debug! and trace!
     let event_loop = EventLoop::new();
 
-    let window = WindowBuilder::new().with_title("WGPU Renderer").build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("WGPU Renderer")
+        .with_resizable(false)
+        .build(&event_loop)
+        .unwrap();
+
+    // INFO: This is just for debugging purposes
+    window.set_outer_position(winit::dpi::PhysicalPosition::new(2561.0, 1.0));
 
     let mut state = block_on(State::new(&window));
 
