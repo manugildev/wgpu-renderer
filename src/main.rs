@@ -227,6 +227,7 @@ struct State {
     num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
     _diffuse_texture: Texture,
+    depth_texture: Texture,
     camera: Camera,
     camera_controller: CameraController,
     uniforms: Uniforms,
@@ -313,6 +314,8 @@ impl State {
             ],
         };
         let diffuse_bind_group = device.create_bind_group(&bind_group_desc);
+
+        let depth_texture = texture::Texture::create_depth_texture(&device, &swap_chain_desc, "depth_texture");
 
         let camera = Camera {
             eye: (0.0, 1.0, 2.0).into(),
@@ -423,7 +426,14 @@ impl State {
                 write_mask: wgpu::ColorWrite::ALL,
             }],
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            depth_stencil_state: None,
+            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                // When to discard a new pixel. Drawn front to back. Depth should be less (closer
+                // to camera) to discard the previous pixel on the texture
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilStateDescriptor::default(),
+            }),
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
                 vertex_buffers: &[Vertex::desc()],
@@ -448,6 +458,7 @@ impl State {
             num_indices,
             diffuse_bind_group,
             _diffuse_texture: diffuse_texture,
+            depth_texture,
             camera,
             camera_controller,
             uniforms,
@@ -461,6 +472,7 @@ impl State {
         self.swap_chain_desc.width = new_size.width;
         self.swap_chain_desc.height = new_size.height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.swap_chain_desc);
+        self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.swap_chain_desc, "depth_texture");
     }
 
     // Returns a bool to indicate whether an event has been fully processed. If `true` the main
@@ -499,7 +511,14 @@ impl State {
                     },
                 }],
                 // Depth Stencil Attachments
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0), // Clear before use
+                        store: true, // Render Pass will write here: true
+                    }),
+                    stencil_ops: None,
+                }),
             };
             let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
             render_pass.set_pipeline(&self.render_pipeline);
