@@ -1776,6 +1776,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "tobj"
+version = "2.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18ae31f5c23500c4bbbea8420c1761e9bdfdd8eeb95f35f37c97cb67ec9d7aff"
+
+[[package]]
 name = "toml"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2045,6 +2051,7 @@ dependencies = [
  "image",
  "log",
  "shaderc",
+ "tobj",
  "wgpu",
  "winit",
 ]

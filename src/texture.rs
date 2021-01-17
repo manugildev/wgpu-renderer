@@ -1,5 +1,6 @@
 use anyhow::*;
 use image::GenericImageView;
+use std::path::Path;
 
 
 pub struct Texture {
@@ -11,14 +12,24 @@ pub struct Texture {
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+    pub fn load<P: AsRef<Path>>(device: &wgpu::Device, queue: &wgpu::Queue, path: P,) -> Result<Self> {
+        // Needed to appease the borrow checker
+        let path_copy = path.as_ref().to_path_buf();
+        let label = path_copy.to_str();
+
+        let img = image::open(path)?;
+        Self::from_image(device, queue, &img, label)
+    }
+
+    #[allow(dead_code)]
     pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], label: &str,) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
         return Self::from_image(device, queue, &img, Some(label));
     }
 
     pub fn from_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &image::DynamicImage, label: Option<&str>,) -> Result<Self> {
-        let rgba = img.as_rgba8().unwrap();
         let dimensions = img.dimensions();
+        let rgba = img.to_rgba8();
 
         let size = wgpu::Extent3d {
             width: dimensions.0,
@@ -50,7 +61,7 @@ impl Texture {
             rows_per_image: size.height,
         };
 
-        queue.write_texture(texture_view, rgba, texture_data_layout, size,);
+        queue.write_texture(texture_view, &rgba, texture_data_layout, size,);
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
