@@ -21,9 +21,7 @@ impl Vertex for ModelVertex {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
         use std::mem;
         wgpu::VertexBufferDescriptor {
-            stride: mem::size_of::<ModelVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::InputStepMode::Vertex,
-            attributes: &[
+            stride: mem::size_of::<ModelVertex>() as wgpu::BufferAddress, step_mode: wgpu::InputStepMode::Vertex, attributes: &[
                 wgpu::VertexAttributeDescriptor {
                     offset: 0,
                     shader_location: 0,
@@ -146,43 +144,20 @@ impl Model {
     }
 }
 
-pub trait DrawModel<'a, 'b>
-where
-    'b: 'a,
+pub trait DrawModel<'a>
 {
-    fn draw_mesh(&mut self, mesh: &'b Mesh, material: &'b Material, uniforms: &'b wgpu::BindGroup);
-    fn draw_mesh_instanced(
-        &mut self,
-        mesh: &'b Mesh,
-        material: &'b Material,
-        instances: Range<u32>,
-        uniforms: &'b wgpu::BindGroup,
-    );
-
-    fn draw_model(&mut self, model: &'b Model, uniforms: &'b wgpu::BindGroup);
-    fn draw_model_instanced(
-        &mut self,
-        model: &'b Model,
-        instances: Range<u32>,
-        uniforms: &'b wgpu::BindGroup,
-    );
+    fn draw_mesh(&mut self, mesh: &'a Mesh, material: &'a Material, uniforms: &'a wgpu::BindGroup);
+    fn draw_mesh_instanced(&mut self, mesh: &'a Mesh, material: &'a Material, instances: Range<u32>, uniforms: &'a wgpu::BindGroup,);
+    fn draw_model(&mut self, model: &'a Model, uniforms: &'a wgpu::BindGroup);
+    fn draw_model_instanced(&mut self, model: &'a Model, instances: Range<u32>, uniforms: &'a wgpu::BindGroup,);
 }
 
-impl<'a, 'b> DrawModel<'a, 'b> for wgpu::RenderPass<'a>
-where
-    'b: 'a,
-{
-    fn draw_mesh(&mut self, mesh: &'b Mesh, material: &'b Material, uniforms: &'b wgpu::BindGroup) {
+impl<'a> DrawModel<'a> for wgpu::RenderPass<'a> {
+    fn draw_mesh(&mut self, mesh: &'a Mesh, material: &'a Material, uniforms: &'a wgpu::BindGroup) {
         self.draw_mesh_instanced(mesh, material, 0..1, uniforms);
     }
 
-    fn draw_mesh_instanced(
-        &mut self,
-        mesh: &'b Mesh,
-        material: &'b Material,
-        instances: Range<u32>,
-        uniforms: &'b wgpu::BindGroup,
-    ) {
+    fn draw_mesh_instanced(&mut self, mesh: &'a Mesh, material: &'a Material, instances: Range<u32>, uniforms: &'a wgpu::BindGroup,) {
         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
         self.set_index_buffer(mesh.index_buffer.slice(..));
         self.set_bind_group(0, &material.bind_group, &[]);
@@ -190,16 +165,11 @@ where
         self.draw_indexed(0..mesh.num_elements, 0, instances);
     }
 
-    fn draw_model(&mut self, model: &'b Model, uniforms: &'b wgpu::BindGroup) {
+    fn draw_model(&mut self, model: &'a Model, uniforms: &'a wgpu::BindGroup) {
         self.draw_model_instanced(model, 0..1, uniforms);
     }
 
-    fn draw_model_instanced(
-        &mut self,
-        model: &'b Model,
-        instances: Range<u32>,
-        uniforms: &'b wgpu::BindGroup,
-    ) {
+    fn draw_model_instanced(&mut self, model: &'a Model, instances: Range<u32>, uniforms: &'a wgpu::BindGroup,) {
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
             self.draw_mesh_instanced(mesh, material, instances.clone(), uniforms);
