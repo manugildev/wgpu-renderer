@@ -28,3 +28,12 @@ anyhow = "1.0"
 fs_extra = "1.1"
 glob = "0.3"
 shaderc = "0.6"
+
+# The development profile, used for `cargo build`
+[profile.dev]
+opt-level = 0  # Controls the --opt-level the compiler builds with
+debug = true   # Controls whether the compiler passes `-g`
+# The release profile, used for `cargo build --release`
+[profile.release]
+opt-level = 3
+debug = false

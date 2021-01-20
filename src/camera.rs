@@ -49,7 +49,7 @@ impl CameraController {
             is_backward_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
-        } 
+        }
     }
 
     pub fn process_events(&mut self, event: &WindowEvent) -> bool {
