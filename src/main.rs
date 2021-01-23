@@ -29,6 +29,7 @@ struct Uniforms {
     // We can't use cgmath with bytemuck directly so we'll have
     // to convert the Matrix4 into a 4x4 f32 array
     // TODO: Build converter (from/into) form cgmath to bytemuck
+    view_position: [f32; 4],
     view_proj: [[f32; 4]; 4],
 }
 
@@ -36,11 +37,17 @@ impl Uniforms {
     fn new() -> Self {
         use cgmath::SquareMatrix;
         return Self {
-            view_proj: cgmath::Matrix4::identity().into()
+            view_position: [0.0; 4],
+            view_proj: cgmath::Matrix4::identity().into(),
         };
     }
 
     fn update_view_proj(&mut self, camera: &Camera) {
+        // We don't specifically need homogeneous coordinates since we're just using
+        // a vec3 in the shader. We're using Point3 for the camera.eye, and this is
+        // the easiest way to convert to Vector4. We're using Vector4 because of
+        // the uniforms 16 byte spacing requirement
+        self.view_position = camera.eye.to_homogeneous().into();
         self.view_proj = camera.build_view_projection_matrix().into();
     }
 }
@@ -288,7 +295,7 @@ impl State {
         // Create Uniform Bind Group
         let uniform_bind_group_layout_entry = wgpu::BindGroupLayoutEntry {
             binding: 0,
-            visibility: wgpu::ShaderStage::VERTEX,
+            visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
             ty: wgpu::BindingType::UniformBuffer { dynamic: false, min_binding_size: None, },
             count: None,
         };

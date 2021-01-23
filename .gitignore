@@ -6,3 +6,4 @@
 
 # IDE
 .nvimlog
+.vscode/
