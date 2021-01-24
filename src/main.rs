@@ -16,7 +16,6 @@ use wgpu::util::DeviceExt;
 
 use texture::Texture;
 use model::{Vertex, DrawModel, DrawLight};
-use camera::{Camera, CameraController};
 use light::Light;
 
 use cgmath::prelude::*;
@@ -42,13 +41,9 @@ impl Uniforms {
         };
     }
 
-    fn update_view_proj(&mut self, camera: &Camera) {
-        // We don't specifically need homogeneous coordinates since we're just using
-        // a vec3 in the shader. We're using Point3 for the camera.eye, and this is
-        // the easiest way to convert to Vector4. We're using Vector4 because of
-        // the uniforms 16 byte spacing requirement
-        self.view_position = camera.eye.to_homogeneous().into();
-        self.view_proj = camera.build_view_projection_matrix().into();
+    fn update_view_proj(&mut self, camera: &camera::Camera, projection: &camera::Projection) {
+        self.view_position = camera.position.to_homogeneous().into();
+        self.view_proj = (projection.calc_matrix() * camera.calc_matrix()).into();
     }
 }
 
@@ -187,8 +182,9 @@ struct State {
     swap_chain: wgpu::SwapChain,
     render_pipeline: wgpu::RenderPipeline,
     obj_model: model::Model,
-    camera: Camera,
-    camera_controller: CameraController,
+    camera: camera::Camera,
+    camera_controller: camera::CameraController,
+    projection: camera::Projection,
     uniforms: Uniforms,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
@@ -201,6 +197,7 @@ struct State {
     instance_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
     size: PhysicalSize<u32>, // INFO: PhysicalSize takes into account device's scale factor
+    mouse_pressed: bool,
 }
 
 impl State {
@@ -281,21 +278,13 @@ impl State {
 
         let depth_texture = texture::Texture::create_depth_texture(&device, &swap_chain_desc, "depth_texture");
 
-        let camera = Camera {
-            eye: (0.0, 1.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
-            up: cgmath::Vector3::unit_y(),
-            aspect: swap_chain_desc.width as f32 / swap_chain_desc.height as f32,
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
-        };
-
-        let camera_controller = CameraController::new(0.2);
+        let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let projection = camera::Projection::new(swap_chain_desc.width, swap_chain_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let camera_controller = camera::CameraController::new(4.0, 0.4);
 
         // Create Uniform Buffers
         let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(&camera);
+        uniforms.update_view_proj(&camera, &projection);
 
         let uniforms_array = &[uniforms];
         let uniform_buffer_desc = wgpu::util::BufferInitDescriptor {
@@ -462,6 +451,7 @@ impl State {
             obj_model,
             camera,
             camera_controller,
+            projection,
             uniforms,
             uniform_buffer,
             uniform_bind_group,
@@ -473,6 +463,7 @@ impl State {
             instance_buffer,
             depth_texture,
             size,
+            mouse_pressed: false,
         };
     }
 
@@ -482,22 +473,49 @@ impl State {
         self.swap_chain_desc.height = new_size.height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.swap_chain_desc);
         self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.swap_chain_desc, "depth_texture");
+        self.projection.resize(new_size.width, new_size.height);
     }
 
     // Returns a bool to indicate whether an event has been fully processed. If `true` the main
     // loop won't process the event any further
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        return self.camera_controller.process_events(event);
+    fn input(&mut self, event: &DeviceEvent) -> bool {
+        match event {
+            DeviceEvent::Key(
+                KeyboardInput {
+                    virtual_keycode: Some(key),
+                    state,
+                    ..
+                }
+            ) => self.camera_controller.process_keyboard(*key, *state),
+            DeviceEvent::MouseWheel { delta, .. } => {
+                self.camera_controller.process_scroll(delta);
+                true
+            }
+            DeviceEvent::Button {
+                button: 1, // Left Mouse Button
+                state,
+            } => {
+                self.mouse_pressed = *state == ElementState::Pressed;
+                true
+            }
+            DeviceEvent::MouseMotion { delta } => {
+                if self.mouse_pressed {
+                    self.camera_controller.process_mouse(delta.0, delta.1);
+                }
+                true
+            }
+            _ => false,
+        }
     }
 
-    fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.uniforms.update_view_proj(&self.camera);
+    fn update(&mut self, dt: std::time::Duration) {
+        self.camera_controller.update_camera(&mut self.camera, dt);
+        self.uniforms.update_view_proj(&self.camera, &self.projection);
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
 
         // Update light's position
         let old_position: cgmath::Vector3<f32> = self.light.position.into();
-        let new_position = cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0)) * old_position;
+        let new_position = cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(60.0 * dt.as_secs_f32())) * old_position;
         self.light.position = new_position.into();
         self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light]));
     }
@@ -586,8 +604,8 @@ fn handle_window_events(state: &mut State, event: WindowEvent, control_flow: &mu
     }
 }
 
-fn handle_redraw_requested(state: &mut State, control_flow: &mut ControlFlow) {
-    state.update();
+fn handle_redraw_requested(state: &mut State, control_flow: &mut ControlFlow, dt: std::time::Duration) {
+    state.update(dt);
     match state.render() {
         Err(wgpu::SwapChainError::Lost) => state.resize(state.size),
         Err(wgpu::SwapChainError::OutOfMemory) => *control_flow = ControlFlow::Exit,
@@ -610,17 +628,22 @@ fn main() {
     window.set_outer_position(winit::dpi::PhysicalPosition::new(2561.0, 1.0));
 
     let mut state = block_on(State::new(&window));
+    let mut last_render_time = std::time::Instant::now();
 
     // INFO: move -> moves any variables you reference which are outside the scope of the closure into the closure's object.
     event_loop.run(move |event, _event_loop_window_target, control_flow| {
         match event {
+            Event::DeviceEvent { ref event, ..} => { state.input(event); }
             Event::WindowEvent { event, window_id } => {
-                if window_id == window.id() && !state.input(&event) {
+                if window_id == window.id() {
                     handle_window_events(&mut state, event, control_flow);
                 }
             }
             Event::RedrawRequested(_window_id) => {
-                handle_redraw_requested(&mut state, control_flow);
+                let now = std::time::Instant::now();
+                let dt = now - last_render_time;
+                last_render_time = now;
+                handle_redraw_requested(&mut state, control_flow, dt);
             }
             Event::MainEventsCleared => {
                 // Emitted when all of the event loop's input events have been processed and redraw processing
