@@ -134,7 +134,7 @@ fn create_render_pipeline(
 
     // Create Render Pipeline
     let render_pipeline_desc = wgpu::RenderPipelineDescriptor {
-        label: Some("Render Pipeline"),
+        label: Some("render_pipeline"),
         layout: Some(&layout),
         vertex_stage: wgpu::ProgrammableStageDescriptor {
             module: &vs_module,
@@ -256,9 +256,23 @@ impl State {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler {
-                        comparison: false,
+                    ty: wgpu::BindingType::Sampler { comparison: false, },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::SampledTexture {
+                        multisampled: false,
+                        dimension: wgpu::TextureViewDimension::D2,
+                        component_type: wgpu::TextureComponentType::Uint,
                     },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler { comparison: false, },
                     count: None,
                 },
             ],
@@ -285,7 +299,7 @@ impl State {
 
         let uniforms_array = &[uniforms];
         let uniform_buffer_desc = wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
+            label: Some("uniform_buffer"),
             contents: bytemuck::cast_slice(uniforms_array),
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
         };
@@ -300,12 +314,12 @@ impl State {
             count: None,
         };
         let uniform_bind_group_layout_desc = wgpu::BindGroupLayoutDescriptor{
-            label: Some("Uniform Bind Group Layout"),
+            label: Some("uniform_bind_group_layout"),
             entries: &[uniform_bind_group_layout_entry]
         }; 
         let uniform_bind_group_layout = device.create_bind_group_layout(&uniform_bind_group_layout_desc);
         let uniform_bind_group_desc = wgpu::BindGroupDescriptor {
-            label: Some("Uniform Bind Group"),
+            label: Some("uniform_bind_group"),
             layout: &uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -351,7 +365,7 @@ impl State {
 
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<InstanceRaw>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor{
-            label: Some("Instance Buffer"),
+            label: Some("instance_buffer"),
             contents: bytemuck::cast_slice(&instance_data),
             usage: wgpu::BufferUsage::VERTEX,
         });
@@ -365,14 +379,14 @@ impl State {
         };
         let lights_array = &[light];
         let light_buffer_init_desc = wgpu::util::BufferInitDescriptor {
-            label: Some("light_buffer_init_desc"),
+            label: Some("light_buffer_init"),
             contents: bytemuck::cast_slice(lights_array),
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
         };
         let light_buffer = device.create_buffer_init(&light_buffer_init_desc);
 
         let light_bind_group_layout_desc = wgpu::BindGroupLayoutDescriptor {
-            label: Some("light_bind_group_layout_desc"),
+            label: Some("light_bind_group_layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
@@ -394,7 +408,7 @@ impl State {
 
         // Create Pipeline Layout
         let pipeline_layout_desc = wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
+            label: Some("pipeline_layout"),
             bind_group_layouts: &[
                 &texture_bind_group_layout,
                 &uniform_bind_group_layout,
@@ -494,7 +508,7 @@ impl State {
 
         // Create command encoder
         let command_encoder_desc = wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
+            label: Some("command_encoder"),
         };
         let mut encoder = self.device.create_command_encoder(&command_encoder_desc);
 

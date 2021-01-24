@@ -44,8 +44,45 @@ impl Vertex for ModelVertex {
 
 pub struct Material {
     pub name: String,
+    // TODO: Change this to Option<Texture> or default white texture
     pub diffuse_texture: texture::Texture,
+    pub normal_texture: texture::Texture,
     pub bind_group: wgpu::BindGroup,
+}
+
+impl Material {
+    pub fn new(device: &wgpu::Device, name: &str, diffuse_texture: texture::Texture, normal_texture: texture::Texture, layout: &wgpu::BindGroupLayout,) -> Self {
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(name),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&normal_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
+                },
+            ],
+        });
+
+        return Material {
+            name: String::from(name),
+            diffuse_texture,
+            normal_texture,
+            bind_group
+        };
+    }
 }
 
 pub struct Mesh {
@@ -76,29 +113,18 @@ impl Model {
         let mut materials = Vec::new();
         for mat in obj_materials {
             let diffuse_path = mat.diffuse_texture;
-            let diffuse_texture =
-                texture::Texture::load(device, queue, containing_folder.join(diffuse_path))?;
+            let diffuse_texture = texture::Texture::load(device, queue, containing_folder.join(diffuse_path))?;
 
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                    },
-                ],
-                label: None,
-            });
+            let normal_path = mat.normal_texture;
+            let normal_texture = texture::Texture::load(device, queue, containing_folder.join(normal_path))?;
 
-            materials.push(Material {
-                name: mat.name,
+            materials.push(Material::new(
+                device,
+                &mat.name,
                 diffuse_texture,
-                bind_group,
-            });
+                normal_texture,
+                layout,
+            ));
         }
 
         let mut meshes = Vec::new();
@@ -150,6 +176,7 @@ pub trait DrawModel<'a>
     fn draw_mesh_instanced(&mut self, mesh: &'a Mesh, material: &'a Material, instances: Range<u32>, uniforms: &'a wgpu::BindGroup, light: &'a wgpu::BindGroup);
     fn draw_model(&mut self, model: &'a Model, uniforms: &'a wgpu::BindGroup, light: &'a wgpu::BindGroup);
     fn draw_model_instanced(&mut self, model: &'a Model, instances: Range<u32>, uniforms: &'a wgpu::BindGroup, light: &'a wgpu::BindGroup);
+    fn draw_model_instanced_with_material(&mut self, model: &'a Model, material: &'a Material, instances: Range<u32>, uniforms: &'a wgpu::BindGroup, light: &'a wgpu::BindGroup);
 }
 
 impl<'a> DrawModel<'a> for wgpu::RenderPass<'a> {
@@ -173,6 +200,12 @@ impl<'a> DrawModel<'a> for wgpu::RenderPass<'a> {
     fn draw_model_instanced(&mut self, model: &'a Model, instances: Range<u32>, uniforms: &'a wgpu::BindGroup, light: &'a wgpu::BindGroup) {
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
+            self.draw_mesh_instanced(mesh, material, instances.clone(), uniforms, light);
+        }
+    }
+
+    fn draw_model_instanced_with_material(&mut self, model: &'a Model, material: &'a Material, instances: Range<u32>, uniforms: &'a wgpu::BindGroup, light: &'a wgpu::BindGroup) {
+         for mesh in &model.meshes {
             self.draw_mesh_instanced(mesh, material, instances.clone(), uniforms, light);
         }
     }
