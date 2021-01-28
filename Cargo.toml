@@ -13,9 +13,10 @@ cgmath = "0.17"
 env_logger = "0.7" # Only use on binaries, libraries should use 'log' instead
 log = "0.4"
 futures = "0.3" # IDEA: Substitute this by std::futures? 
-bytemuck = { version = "1.4", features = ["derive" ]}
+bytemuck = { version = "1.4", features = ["derive"]}
 anyhow = "1.0"
 tobj = "2.0"
+rayon = "1.4"
 
 # Adds dependency but allows to change some of the included features
 [dependencies.wgpu]
@@ -28,6 +29,7 @@ anyhow = "1.0"
 fs_extra = "1.1"
 glob = "0.3"
 shaderc = "0.6"
+rayon = "1.4"
 
 # The development profile, used for `cargo build`
 [profile.dev]

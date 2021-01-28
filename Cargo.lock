@@ -2050,6 +2050,7 @@ dependencies = [
  "glob",
  "image",
  "log",
+ "rayon",
  "shaderc",
  "tobj",
  "wgpu",

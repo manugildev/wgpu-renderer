@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::env;
 use fs_extra::copy_items;
 use fs_extra::dir::CopyOptions;
+use rayon::prelude::*;
 
 struct ShaderData {
     src: String,
@@ -42,15 +43,13 @@ impl ShaderData {
 
 fn main() -> Result<()> {
     // Collect all shaders recursively within /src/
-    let mut shader_paths = [
-        glob("./shaders/**/*.vert")?,
-        glob("./shaders/**/*.frag")?,
-        glob("./shaders/**/*.comp")?,
-    ];
+    let mut shader_paths = Vec::new();
+    shader_paths.extend(glob("./shaders/**/*.vert")?);
+    shader_paths.extend(glob("./shaders/**/*.frag")?);
+    shader_paths.extend(glob("./shaders/**/*.comp")?);
 
     let shaders = shader_paths
-        .iter_mut()
-        .flatten()
+        .into_par_iter()
         .map(|glob_result| ShaderData::load(glob_result?))
         .collect::<Vec<Result<_>>>()
         .into_iter() // Convert into either Some(Vec) or None
