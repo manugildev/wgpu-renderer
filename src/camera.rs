@@ -122,15 +122,16 @@ impl CameraController {
     }
 
     pub fn process_mouse(&mut self, mouse_dx: f64, mouse_dy: f64) {
-        self.rotate_horizontal = (mouse_dx * 3.0) as f32;
-        self.rotate_vertical = (mouse_dy * 3.0) as f32;
+        self.rotate_horizontal = mouse_dx as f32;
+        self.rotate_vertical = mouse_dy as f32;
     }
 
     pub fn process_scroll(&mut self, delta: &MouseScrollDelta) {
         self.scroll = -match delta {
-            MouseScrollDelta::LineDelta(_, scroll) => scroll * 20.0,
+            MouseScrollDelta::LineDelta(_, scroll) => -scroll * 0.5,
             MouseScrollDelta::PixelDelta(LogicalPosition{ y: scroll, ..  }) => *scroll as f32,
         };
+        println!("{:.5}", self.scroll);
     }
 
     pub fn update_camera(&mut self, camera: &mut Camera, dt: Duration) {
@@ -157,8 +158,8 @@ impl CameraController {
         camera.position.y += (self.amount_up - self.amount_down) * self.speed * dt;
 
         // Rotate
-        camera.yaw += Rad(self.rotate_horizontal) * self.sensitivity * dt;
-        camera.pitch += Rad(-self.rotate_vertical) * self.sensitivity * dt;
+        camera.yaw += Rad(self.rotate_horizontal * self.sensitivity * dt) / 5.0;
+        camera.pitch += Rad(-self.rotate_vertical * self.sensitivity * dt) / 5.0;
 
         // If process_mouse isn't called every frame, these values
         // will not get set to zero, and the camera will rotate

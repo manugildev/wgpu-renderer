@@ -280,7 +280,7 @@ impl State {
 
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection = camera::Projection::new(swap_chain_desc.width, swap_chain_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
-        let camera_controller = camera::CameraController::new(4.0, 0.4);
+        let camera_controller = camera::CameraController::new(4.0, 1.0);
 
         // Create Uniform Buffers
         let mut uniforms = Uniforms::new();
@@ -480,13 +480,6 @@ impl State {
     // loop won't process the event any further
     fn input(&mut self, event: &DeviceEvent) -> bool {
         match event {
-            DeviceEvent::Key(
-                KeyboardInput {
-                    virtual_keycode: Some(key),
-                    state,
-                    ..
-                }
-            ) => self.camera_controller.process_keyboard(*key, *state),
             DeviceEvent::MouseWheel { delta, .. } => {
                 self.camera_controller.process_scroll(delta);
                 true
@@ -503,6 +496,9 @@ impl State {
                     self.camera_controller.process_mouse(delta.0, delta.1);
                 }
                 true
+            }
+            DeviceEvent::Motion { .. } => {
+                false
             }
             _ => false,
         }
@@ -577,13 +573,14 @@ impl State {
     }
 }
 
-fn handle_keyboard_input(_state: &mut State, input: KeyboardInput, control_flow: &mut ControlFlow) {
-    if input.state == ElementState::Pressed {
-        match input.virtual_keycode {
-            Some(VirtualKeyCode::Escape) => {
-                *control_flow = ControlFlow::Exit;
+fn handle_keyboard_input(state: &mut State, input: KeyboardInput, control_flow: &mut ControlFlow) {
+    match input {
+        KeyboardInput { virtual_keycode: key, state: element_state, .. } => {
+            match (key, element_state) {
+                (Some(VirtualKeyCode::Escape), ElementState::Pressed) => { *control_flow = ControlFlow::Exit; }
+                (Some(_), _) => { state.camera_controller.process_keyboard(key.unwrap(), element_state); }
+                _ => {}
             }
-            _ => {}
         }
     }
 }
